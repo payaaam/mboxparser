@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/satori/go.uuid"
 	"io"
-	"log"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/http"
@@ -89,7 +88,6 @@ func isMultiPartMessage(message *Message) bool {
 }
 
 func processPlainEmail(email *mail.Message, message *Message) (*mail.Message, error) {
-	log.Println("------ PROCES PLAN EMAIL -------")
 	for key, header := range message.Header {
 		email.Header[http.CanonicalHeaderKey(key)] = header
 	}
