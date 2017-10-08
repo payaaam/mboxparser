@@ -2,8 +2,11 @@ package mboxparser
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"github.com/satori/go.uuid"
 	"io"
+	"log"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/http"
@@ -12,29 +15,44 @@ import (
 	"strings"
 )
 
+var QuotedPrintable string = "quoted-printable"
+
 // Encode a mboxparser.Message to a writable mail.Message
 func Encode(message *Message) (*mail.Message, error) {
 	email := &mail.Message{
-		Header: nil,
+		Header: mail.Header(map[string][]string{}),
 		Body:   nil,
 	}
+
+	if isMultiPartMessage(message) != true {
+		return processPlainEmail(email, message)
+	}
+
 	messageBuffer := new(bytes.Buffer)
 	mboxMessage := multipart.NewWriter(messageBuffer)
-
-	// Add headers to *mail.Message from Message
-	for key, header := range message.Header {
-		email.Header[http.CanonicalHeaderKey(key)] = header
-	}
 
 	// TODO: Get Boundary from Headers
 	emailBoundary := uuid.NewV4().String()
 	mboxMessage.SetBoundary(emailBoundary)
 
-	for _, part := range message.Bodies {
+	// Add headers to *mail.Message from Message
+	for key, header := range message.Header {
+		if key == "Content-Type" {
+			header[0] = fmt.Sprintf("%s; boundary=\"%s\"", header[0], emailBoundary)
+		}
+		email.Header[http.CanonicalHeaderKey(key)] = header
+	}
 
+	for _, part := range message.Bodies {
 		partHeader := make(textproto.MIMEHeader)
+
 		for key, header := range part.Header {
 			partHeader.Set(http.CanonicalHeaderKey(key), strings.Join(header, "; "))
+		}
+
+		ContentTransferEncodingHeader := http.CanonicalHeaderKey("Content-Transfer-Encoding")
+		if partHeader.Get(ContentTransferEncodingHeader) == "" {
+			partHeader.Set(ContentTransferEncodingHeader, QuotedPrintable)
 		}
 
 		mboxPart, err := mboxMessage.CreatePart(partHeader)
@@ -43,9 +61,12 @@ func Encode(message *Message) (*mail.Message, error) {
 		}
 
 		encodedMboxPart := quotedprintable.NewWriter(mboxPart)
-		defer encodedMboxPart.Close()
 
 		encodedMboxPart.Write(streamToBytes(part.Content))
+		err = encodedMboxPart.Close()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err := mboxMessage.Close()
@@ -53,6 +74,33 @@ func Encode(message *Message) (*mail.Message, error) {
 		return nil, err
 	}
 	email.Body = messageBuffer
+	return email, nil
+}
+
+func isMultiPartMessage(message *Message) bool {
+	for key, header := range message.Header {
+		if key == "Content-Type" && len(header) > 0 {
+			if strings.HasPrefix(header[0], "multipart/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func processPlainEmail(email *mail.Message, message *Message) (*mail.Message, error) {
+	log.Println("------ PROCES PLAN EMAIL -------")
+	for key, header := range message.Header {
+		email.Header[http.CanonicalHeaderKey(key)] = header
+	}
+	if len(message.Bodies) != 1 {
+		return nil, errors.New("Found multiple bodies in non multi-part email")
+	}
+
+	body := message.Bodies[0]
+	contentType := body.Header.Get("Content-Type")
+	email.Header["Content-Type"] = []string{contentType}
+	email.Body = body.Content
 	return email, nil
 }
 

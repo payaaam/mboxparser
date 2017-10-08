@@ -23,6 +23,7 @@ func WriteFile(mboxFile *Mbox, outputPath string) error {
 	}
 
 	fileWriter := bufio.NewWriter(fileToWrite)
+	defer fileWriter.Flush()
 	mboxWriter := mbox.NewWriter(fileWriter)
 
 	for _, mailMessage := range encodedMessages {
