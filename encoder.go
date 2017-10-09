@@ -2,10 +2,12 @@ package mboxparser
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/satori/go.uuid"
 	"io"
+	"log"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/http"
@@ -50,22 +52,30 @@ func Encode(message *Message) (*mail.Message, error) {
 		}
 
 		ContentTransferEncodingHeader := http.CanonicalHeaderKey("Content-Transfer-Encoding")
+
 		if partHeader.Get(ContentTransferEncodingHeader) == "" {
 			partHeader.Set(ContentTransferEncodingHeader, QuotedPrintable)
 		}
+		contentTransferEncodingValue := partHeader.Get(ContentTransferEncodingHeader)
+		log.Printf("CTE: %s\n", contentTransferEncodingValue)
 
 		mboxPart, err := mboxMessage.CreatePart(partHeader)
 		if err != nil {
 			return nil, err
 		}
 
-		encodedMboxPart := quotedprintable.NewWriter(mboxPart)
-
-		encodedMboxPart.Write(streamToBytes(part.Content))
-		err = encodedMboxPart.Close()
-		if err != nil {
-			return nil, err
+		if contentTransferEncodingValue == "base64" {
+			encodedMboxPart := base64.NewEncoder(base64.StdEncoding, mboxPart)
+			encodedMboxPart.Write(streamToBytes(part.Content))
+		} else {
+			encodedMboxPart := quotedprintable.NewWriter(mboxPart)
+			encodedMboxPart.Write(streamToBytes(part.Content))
+			err = encodedMboxPart.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
+
 	}
 
 	err := mboxMessage.Close()

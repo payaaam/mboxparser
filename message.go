@@ -55,7 +55,9 @@ func newBodyByPart(part *multipart.Part) *Body {
 		return nil
 	}
 
-	mediaType, params, err := mime.ParseMediaType(body.Header.Get("Content-Type"))
+	contentTypeHeader := body.Header.Get("Content-Type")
+	contentTransferEncodingHeader := body.Header.Get("Content-Transfer-Encoding")
+	_, params, err := mime.ParseMediaType(contentTypeHeader)
 	if err != nil {
 		return nil
 	}
@@ -63,7 +65,8 @@ func newBodyByPart(part *multipart.Part) *Body {
 	charset := params["charset"]
 	encoding := body.Header.Get("Content-Transfer-Encoding")
 
-	body.Header.Set("Content-Type", mediaType)
+	body.Header.Set("Content-Type", contentTypeHeader)
+	body.Header.Set("Content-Transfer-Encoding", contentTransferEncodingHeader)
 
 	body.Content = newDecoder(buf, charset, encoding)
 
